@@ -20,7 +20,7 @@ HOOD_ANGLE_DELTA = 1.0
 RPM_DELTA = 5.0
 
 FLYWHEEL_DIAMETER = 0.1  # meters
-SHOT_HEIGHT = 1.0  # meters
+SHOT_HEIGHT = 0.83  # meters
 BALL_MASS = 0.27  # kilos
 GOAL_HEIGHT = 2.64  # meters
 BALL_DIAMETER = 0.24  # meters
@@ -47,10 +47,11 @@ def main():
             while angle <= MAX_HOOD_ANGLE:
                 # Loop over rpm
                 while rpm <= MAX_RPM:
-                    # Check if the shot makes it into the goal
-                    if test_shot(distance, angle, rpm):
+                    # Test the shot and check if it makes it into the goal
+                    air_time = test_shot(distance, angle, rpm)
+                    if air_time != 0.0:
                         # If it does append it to valid_shots
-                        valid_shots.append((distance, angle, rpm))
+                        valid_shots.append((distance, angle, rpm, air_time))
 
                     # Increment rpm by RPM_DELTA
                     rpm += RPM_DELTA
@@ -149,7 +150,7 @@ def main():
                 # Check the shot's sensitivity to error
                 too_sensitive = False
                 for error_shot in error_shots:
-                    if not test_shot(error_shot[0], error_shot[1], error_shot[2]):
+                    if test_shot(error_shot[0], error_shot[1], error_shot[2]) == 0.0:
                         too_sensitive = True
 
                 # If it is too sensitive cut it
@@ -186,21 +187,32 @@ def main():
             for shot in best_shots:
                 print(f'({round(shot[0], 2)}, {shot[2]})')
 
+            # Print a newline
+            print()
+
+            # Print all the distances and air times
+            print('Air Time')
+            for shot in best_shots:
+                print(f'({round(shot[0], 2)}, {round(shot[3], 2)})')
+
             # Initialize means
             mean_distance = 0.0
             mean_hood_angle = 0.0
             mean_rpm = 0.0
+            mean_airtime = 0.0
 
             # Sum values
             for shot in best_shots:
                 mean_distance += round(shot[0], 2)
                 mean_hood_angle += shot[1]
                 mean_rpm += shot[2]
+                mean_airtime += shot[3]
 
             # Calculate means
             mean_distance /= best_shots.shape[0]
             mean_hood_angle /= best_shots.shape[0]
             mean_rpm /= best_shots.shape[0]
+            mean_airtime /= best_shots.shape[0]
 
             # Calculate the numerator and denominator for the hood angle line of best fit
             numerator = 0.0
@@ -222,10 +234,20 @@ def main():
             rpm_slope = numerator / denomintator
             rpm_intercept = mean_rpm - rpm_slope * mean_distance
 
+            # Calculate the numerator for the air time line of best fit
+            numerator = 0.0
+            for shot in best_shots:
+                numerator += (round(shot[0], 2) - mean_distance) * (shot[3] - mean_airtime)
+
+            # Calculate the slope and intercept of the air time line of best fit
+            air_time_slope = numerator / denomintator
+            air_time_intercept = mean_airtime - air_time_slope * mean_distance
+
             # Print the LOBF equations
             print()
             print(f'Hood Angle LOBF: y={round(hood_angle_slope, 2)}x+{round(hood_angle_intercept, 2)}')
             print(f'RPM LOBF: y={round(rpm_slope, 2)}x+{round(rpm_intercept, 2)}')
+            print(f'Air Time LOBF: y={round(air_time_slope, 2)}x+{round(air_time_intercept, 2)}')
 
 
 # Tests if a shot makes it into the goal
@@ -255,10 +277,12 @@ def test_shot(distance, angle, rpm, return_positions=False):
                 # Check if the ball passed through the goal position
                 if abs(GOAL_HEIGHT - positions[-1][2]) < 0.05:
                     if abs(distance - positions[-1][1]) < 0.05:
+                        # If it has either return all the positions of the ball or the air time
                         if return_positions:
                             return np.array(positions)
                         else:
-                            return True
+                            air_time = positions[-1][0]
+                            return air_time
 
                 # Break out of this loop
                 break
@@ -296,7 +320,8 @@ def test_shot(distance, angle, rpm, return_positions=False):
         # Increment timestep
         time += time_delta
 
-    return False
+    # If the shot is not a valid shot return 0 seconds as the air time
+    return 0.0
 
 
 # Run the main function
